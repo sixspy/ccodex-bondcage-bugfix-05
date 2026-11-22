@@ -141,6 +141,17 @@ createApp({
         (c) => c.status === "核验违约" || c.status === "部分罚没"
       )
     );
+    // 索锁截断：解笼页实时展示所选笼的持锁方与争用痕
+    const currentCageLock = computed(() => {
+      if (!releaseForm.value.cage_id) return null;
+      const key = `cage:${releaseForm.value.cage_id}`;
+      return locks.value.find((l) => l.lock_key === key) || null;
+    });
+    const currentCageContention = computed(() => {
+      if (!releaseForm.value.cage_id) return [];
+      const key = `cage:${releaseForm.value.cage_id}`;
+      return contention.value.filter((x) => x.lock_key === key);
+    });
 
     async function login() {
       err.value = "";
@@ -428,6 +439,8 @@ createApp({
       frozenCages,
       passCages,
       failCages,
+      currentCageLock,
+      currentCageContention,
       login,
       logout,
       refresh,

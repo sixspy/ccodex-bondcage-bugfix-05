@@ -26,6 +26,8 @@ def _reconcile_cage(conn, cage) -> dict:
     ).fetchone()["s"]
     accounted = round(float(available) + float(released) + float(forfeited), 6)
     ok = abs(accounted - amount) < 1e-6
+    # 索锁截断不变量：笼可用额恒非负（未持锁拨付曾把它削成负数）
+    available_non_negative = float(available) >= -1e-9
     # 账户侧：该当事人冻结额应覆盖所有仍冻结/核验中的笼可用
     party = cage["party_key"]
     acct = conn.execute(
@@ -51,6 +53,7 @@ def _reconcile_cage(conn, cage) -> dict:
         "accounted": accounted,
         "balanced": ok,
         "gap": round(amount - accounted, 6),
+        "available_non_negative": available_non_negative,
         "account_balance": float(acct["balance"]) if acct else None,
         "account_frozen": float(acct["frozen"]) if acct else None,
         "live_cage_available": float(live_frozen),
@@ -69,12 +72,15 @@ def reconcile_all(authorization: AuthHeader = None):
         cages = conn.execute("SELECT * FROM cages ORDER BY id").fetchall()
         items = [_reconcile_cage(conn, c) for c in cages]
         bad = [i for i in items if not i["balanced"]]
+        negative = [i for i in items if not i["available_non_negative"]]
         return {
             "items": items,
             "summary": {
                 "total": len(items),
                 "balanced": len(items) - len(bad),
                 "unbalanced": len(bad),
+                "negative_available": len(negative),
+                "lock_cutoff_intact": len(negative) == 0,
             },
         }
 
@@ -128,6 +134,9 @@ def party_proof(party_key: str, authorization: AuthHeader = None):
             "released_total": float(released),
             "forfeited_total": float(forfeited),
             "frozen_matches_live": abs(frozen - live_f) < 1e-6,
+            "non_negative_invariant": frozen >= -1e-9
+            and float(acct["balance"]) >= -1e-9
+            and live_f >= -1e-9,
             "proof": {
                 "formula": "account.frozen == sum(live cage available)",
                 "left": frozen,

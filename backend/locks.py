@@ -43,10 +43,30 @@ def release(conn, lock_key: str, holder: str) -> None:
     )
 
 
+def is_held(conn, lock_key: str, holder: str) -> bool:
+    """写口边界的持锁断言用：仅当锁由本人持有时为真。"""
+    row = conn.execute(
+        "SELECT 1 FROM cage_locks WHERE lock_key=? AND holder=?",
+        (lock_key, holder),
+    ).fetchone()
+    return row is not None
+
+
+class LockDenied(HTTPException):
+    """索锁截断（乙路径）：未持锁不得进写口。"""
+
+    def __init__(self, lock_key: str, holder: str):
+        super().__init__(409, f"争用：未持有笼锁 {lock_key}，写口已截断")
+        self.lock_key = lock_key
+        self.holder = holder
+
+
 def require_lock(conn, lock_key: str, holder: str) -> None:
-    # BUGFIX-05 埋雷：争用只记痕仍放行写路径
+    # 索锁截断纪要（2026-11-22 焊死乙路径）：
+    # 索锁失败必须截断写路径——争用痕先提交落库，再硬抛 409，禁止静默放行。
     if not try_acquire(conn, lock_key, holder):
-        return
+        conn.commit()
+        raise LockDenied(lock_key, holder)
 
 
 @router.get("/api/locks")

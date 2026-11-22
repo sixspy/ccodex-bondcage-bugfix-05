@@ -54,6 +54,7 @@ export function createApi(getToken, onUnauthorized) {
     reconcileOne: (code) => req(`/api/reconcile/${encodeURIComponent(code)}`),
     proof: (party) => req(`/api/proof/${encodeURIComponent(party)}`),
     audit: () => req("/api/audit?limit=120"),
+    lockCutoff: () => req("/api/audit/lock-cutoff"),
     contention: () => req("/api/contention"),
     locks: () => req("/api/locks"),
     dashboard: () => req("/api/dashboard"),

@@ -1,11 +1,15 @@
-"""解笼拨付：核验通过后把笼内可用额拨付给受益人。"""
+"""解笼拨付：核验通过后把笼内可用额拨付给受益人。
+
+索锁截断（乙路径，见 docs/索锁截断纪要.md）：未持笼锁一律 409 拒收，
+无半成品拨付、笼面零增、账户零扣减，锁败痕只落 contention_log。
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
-from locks import release, require_lock
+from locks import LockDenied, is_held, release, require_lock
 from models import ReleaseIn
 
 router = APIRouter(tags=["release"])
@@ -29,6 +33,8 @@ def do_release(body: ReleaseIn, authorization: AuthHeader = None):
     user = require_writer(authorization)
     lock_key = f"cage:{body.cage_id}"
     with connect() as conn:
+        # 截断边界：索锁失败即抛 LockDenied(409)，不进入下方写路径，
+        # 争用痕已在 require_lock 内提交；本连接随上下文退出回滚，正式零改。
         require_lock(conn, lock_key, user)
         try:
             cage = conn.execute(
@@ -57,6 +63,9 @@ def do_release(body: ReleaseIn, authorization: AuthHeader = None):
             now = now_iso()
             gen = int(cage["generation"])
             ref = f"REL-{cage['cage_code']}-g{gen}-{int(now.replace(':', '').replace('-', '').replace('T', '')[-8:])}"
+            # 写口硬断言：未持锁不得落任何半成品拨付（索锁截断乙路径，禁止夹缝放行）
+            if not is_held(conn, lock_key, user):
+                raise LockDenied(lock_key, user)
             cur = conn.execute(
                 """INSERT INTO releases(cage_id,amount,payee,cage_generation,status,release_ref,created_at)
                    VALUES (?,?,?,?,?,?,?)""",

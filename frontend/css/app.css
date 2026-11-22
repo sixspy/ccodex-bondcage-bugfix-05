@@ -361,3 +361,13 @@ th {
   margin-bottom: 12px;
   font-size: 13px;
 }
+
+.cutoff-hint {
+  border-left: 3px solid var(--steel);
+  padding: 6px 10px;
+  background: var(--chip);
+}
+.cutoff-err {
+  border: 1px solid var(--bad);
+  font-weight: 600;
+}
